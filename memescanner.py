@@ -397,11 +397,11 @@ def compute_score(t: dict, posts: list) -> dict:
     age   = t.get("age_hours", 48)
     am    = max(0.5, 2.0 - (age / 72))
 
-    if total >= 90:   lo, hi, conf = 10*am, 100*am, "HOCH"
-    elif total >= 80: lo, hi, conf = 5*am,  30*am,  "MITTEL-HOCH"
-    elif total >= 70: lo, hi, conf = 2*am,  10*am,  "MITTEL"
-    elif total >= 60: lo, hi, conf = 1.5,   5*am,   "NIEDRIG-MITTEL"
-    else:             lo, hi, conf = 1.0,   2.0,    "NIEDRIG"
+    if total >= 90:   lo, hi, conf = 10*am, 100*am, "HIGH"
+    elif total >= 80: lo, hi, conf = 5*am,  30*am,  "MEDIUM-HIGH"
+    elif total >= 70: lo, hi, conf = 2*am,  10*am,  "MEDIUM"
+    elif total >= 60: lo, hi, conf = 1.5,   5*am,   "LOW-MEDIUM"
+    else:             lo, hi, conf = 1.0,   2.0,    "LOW"
 
     return {
         "total": total,
@@ -471,35 +471,35 @@ def send_alert(t: dict, s: dict):
     msg = f"""🔍 <b>MEME COIN ALERT</b> — {s['grade']}
 
 <b>${sym}</b> ({name}) · {chain}
-⏱ {age_s} alt  |  Score: <b>{s['total']}/100</b>
+⏱ {age_s} old  |  Score: <b>{s['total']}/100</b>
 {bar(s['total'])} {s['total']}%
 
-━━ 💰 MARKTDATEN ━━
-Preis:      {fmt_price(t.get('price_usd',0))}
-MarketCap:  {fmt_usd(t.get('market_cap',0)) if t.get('market_cap') else 'N/A'}
-Liquidität: {fmt_usd(t.get('liquidity_usd',0))}
+━━ 💰 MARKET DATA ━━
+Price:      {fmt_price(t.get('price_usd',0))}
+Market Cap: {fmt_usd(t.get('market_cap',0)) if t.get('market_cap') else 'N/A'}
+Liquidity:  {fmt_usd(t.get('liquidity_usd',0))}
 Vol 24h:    {fmt_usd(t.get('volume_24h',0))}
 Δ 1h:  {h1:+.1f}%  |  Δ 24h: {h24:+.1f}%
 Buy/Sell:   {bsr:.2f}x
 
-━━ 🎯 PREISZIEL ━━
-Konfidenz:  <b>{tg_['conf']}</b>
-Jetzt:   {fmt_price(tg_['now'])}
-Ziel ↑:  {fmt_price(tg_['low'])}  ({tg_['mult_low']}x)
-Ziel ↑↑: {fmt_price(tg_['high'])} ({tg_['mult_high']}x)
-{f"MCap @ Ziel: ${tg_['mcap_high_m']}M" if tg_.get('mcap_high_m') else ''}
+━━ 🎯 PRICE TARGET ━━
+Confidence: <b>{tg_['conf']}</b>
+Now:    {fmt_price(tg_['now'])}
+Low ↑:  {fmt_price(tg_['low'])}  ({tg_['mult_low']}x)
+High ↑↑:{fmt_price(tg_['high'])} ({tg_['mult_high']}x)
+{f"MCap @ target: ${tg_['mcap_high_m']}M" if tg_.get('mcap_high_m') else ''}
 
-━━ 📊 SCORE DETAIL ━━
+━━ 📊 SCORE BREAKDOWN ━━
 Vol/MCap:  {mbar(bd['volume_mcap_ratio'])} {bd['volume_mcap_ratio']:.0f}
-Liquidität:{mbar(bd['liquidity_score'])} {bd['liquidity_score']:.0f}
+Liquidity: {mbar(bd['liquidity_score'])} {bd['liquidity_score']:.0f}
 Social:    {mbar(bd['social_velocity'])} {bd['social_velocity']:.0f}
-Alter:     {mbar(bd['token_age_score'])} {bd['token_age_score']:.0f}
+Age:       {mbar(bd['token_age_score'])} {bd['token_age_score']:.0f}
 Momentum:  {mbar(bd['price_momentum'])} {bd['price_momentum']:.0f}
 Safety:    {mbar(bd['safety_score'])} {bd['safety_score']:.0f}
 
-{t.get('dex_url','') or 'Kein DEX-Link'}
+{t.get('dex_url','') or 'No DEX link available'}
 
-⚠️ <i>Kein Finanzrat. Meme-Coins = hohes Risiko.</i>"""
+⚠️ <i>Not financial advice. Meme coins are extremely high risk.</i>"""
 
     tg(msg)
 
@@ -602,10 +602,10 @@ def main():
 
     init_db()
 
-    tg("🤖 <b>MemeScanner gestartet</b>\n"
-       "Scanne DEX + Reddit alle 10 Minuten.\n"
-       f"Alert-Schwelle: Score ≥ {MIN_SCORE_TO_ALERT}/100\n"
-       f"Reddit: kein Key — öffentliche API\n"
+    tg("🤖 <b>MemeScanner started</b>\n"
+       "Scanning DEX + Reddit every 10 minutes.\n"
+       f"Alert threshold: Score ≥ {MIN_SCORE_TO_ALERT}/100\n"
+       f"Reddit: no API key — public JSON feed\n"
        f"{datetime.utcnow().strftime('%d.%m.%Y %H:%M')} UTC")
 
     log.info("Bot läuft. Erster Scan beginnt sofort.")
@@ -618,7 +618,7 @@ def main():
             run_cycle(stats)
         except Exception as e:
             log.exception("Unerwarteter Fehler: %s", e)
-            tg(f"⚠️ <b>Fehler</b>\n<code>{e}</code>")
+            tg(f"⚠️ <b>Error</b>\n<code>{e}</code>")
 
         log.info("Warte %d Minuten...\n", SCAN_INTERVAL_MINUTES)
         for _ in range(interval):
