@@ -264,52 +264,59 @@ def scan_dex() -> list[dict]:
     return list(all_tokens.values())
 
 # ─────────────────────────────────────────────────────────────
-#  REDDIT — öffentliche JSON-API, KEIN KEY NÖTIG
+#  SOCIAL SCANNER — cloud-friendly replacements for Reddit
+#  Arctic Shift API (Reddit archive) + CoinGecko trending
 # ─────────────────────────────────────────────────────────────
 
-_reddit_cache      = []
-_reddit_cache_time = None
-_reddit_headers    = {
-    "User-Agent": "Mozilla/5.0 MemeScanner/1.0"
-}
+_trending_symbols    = []
+_trending_cache_time = None
 
-def get_reddit_posts() -> list[dict]:
-    global _reddit_cache, _reddit_cache_time
+def _fetch_arctic_shift(symbol: str) -> int:
+    """Arctic Shift = Reddit archive API that works from cloud servers."""
+    try:
+        url = "https://arctic-shift.photon-reddit.com/api/posts/search"
+        r   = requests.get(url, params={
+            "q":     symbol,
+            "limit": 25,
+            "after": int((datetime.utcnow() - timedelta(hours=6)).timestamp()),
+        }, timeout=10)
+        if r.status_code == 200:
+            posts = r.json().get("data", [])
+            return sum(1 for p in posts
+                       if symbol.upper() in (p.get("title","") + p.get("selftext","")).upper())
+    except Exception as e:
+        log.debug("Arctic Shift error for %s: %s", symbol, e)
+    return 0
+
+def _fetch_coingecko_trending() -> list:
+    """CoinGecko trending coins — free, works from cloud."""
+    try:
+        r = requests.get("https://api.coingecko.com/api/v3/search/trending", timeout=10)
+        if r.status_code == 200:
+            return [c["item"]["symbol"].upper() for c in r.json().get("coins", [])]
+    except Exception as e:
+        log.debug("CoinGecko trending error: %s", e)
+    return []
+
+def get_social_data(symbol: str) -> dict:
+    """Get social signal: Arctic Shift mentions + CoinGecko trending bonus."""
+    global _trending_symbols, _trending_cache_time
     now = datetime.utcnow()
-    if _reddit_cache_time and (now - _reddit_cache_time).seconds < 480:
-        return _reddit_cache
+    if not _trending_cache_time or (now - _trending_cache_time).seconds > 1800:
+        _trending_symbols    = _fetch_coingecko_trending()
+        _trending_cache_time = now
+        if _trending_symbols:
+            log.info("CoinGecko trending: %s", ", ".join(_trending_symbols[:5]))
+    mentions      = _fetch_arctic_shift(symbol)
+    trending_bonus = 10 if symbol.upper() in _trending_symbols else 0
+    return {"mentions": mentions, "trending_bonus": trending_bonus,
+            "on_trending": symbol.upper() in _trending_symbols}
 
-    posts = []
-    for sub in SUBREDDITS:
-        try:
-            url = f"https://www.reddit.com/r/{sub}/new.json"
-            r   = requests.get(url, headers=_reddit_headers, params={"limit": 25}, timeout=10)
-            if r.status_code != 200:
-                log.warning("Reddit r/%s: HTTP %d", sub, r.status_code)
-                continue
-            for child in r.json().get("data", {}).get("children", []):
-                d = child.get("data", {})
-                posts.append({
-                    "title": d.get("title", ""),
-                    "body":  d.get("selftext", ""),
-                    "score": d.get("score", 0),
-                    "comments": d.get("num_comments", 0),
-                })
-            time.sleep(1.5)  # Reddit rate limit respektieren
-        except Exception as e:
-            log.warning("Reddit r/%s Fehler: %s", sub, e)
-
-    _reddit_cache      = posts
-    _reddit_cache_time = now
-    log.info("Reddit: %d Posts geladen (kein Key nötig)", len(posts))
-    return posts
+def get_reddit_posts() -> list:
+    return []
 
 def reddit_mentions(symbol: str, posts: list) -> int:
-    pat = re.compile(
-        rf'(?<!\w){re.escape(symbol.upper())}(?!\w)|\${re.escape(symbol.upper())}',
-        re.IGNORECASE
-    )
-    return sum(1 for p in posts if pat.search(f"{p['title']} {p['body']}"))
+    return 0
 
 # ─────────────────────────────────────────────────────────────
 #  SCORING ENGINE (0–100)
@@ -337,13 +344,17 @@ def score_liquidity(t: dict) -> float:
     return max(0, (liq / 10_000) * 40)
 
 def score_social(symbol: str, posts: list) -> float:
-    count    = reddit_mentions(symbol, posts)
+    social   = get_social_data(symbol)
+    count    = social["mentions"]
     velocity = mention_velocity(symbol.upper())
     if count > 0:
         save_social(symbol.upper(), count)
     base  = 90 if count >= 30 else 65 if count >= 10 else 40 if count >= 2 else 20 if count >= 1 else 0
     boost = 20 if velocity >= 3 else 12 if velocity >= 2 else 6 if velocity >= 1.5 else 0
-    return min(100, base + boost)
+    trending_boost = social["trending_bonus"]
+    if social["on_trending"]:
+        log.info("  📈 %s is on CoinGecko trending list!", symbol)
+    return min(100, base + boost + trending_boost)
 
 def score_age(t: dict) -> float:
     a = t.get("age_hours", 999)
